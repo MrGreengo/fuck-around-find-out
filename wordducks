@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        /* Previous base styles remain same */
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(180deg, #87CEEB 0%, #4682B4 100%);
+            font-family: Arial, sans-serif;
+        }
+
+        .scene {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        .input-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+        }
+
+        input {
+            padding: 8px;
+            font-size: 16px;
+            border-radius: 4px;
+            border: 2px solid #4682B4;
+            width: 200px;
+        }
+
+        .duck {
+            position: absolute;
+            width: 48px;
+            height: 48px;
+            image-rendering: pixelated;
+            z-index: 2;
+        }
+
+        .word {
+            position: absolute;
+            font-size: 20px;
+            color: white;
+            text-shadow: 2px 2px 2px rgba(0,0,0,0.5);
+            transition: all 0.3s;
+            z-index: 1;
+        }
+
+        .water {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 20%;
+            background: linear-gradient(180deg, #4682B4 0%, #104E8B 100%);
+        }
+
+        .tree {
+            position: absolute;
+            bottom: 20%;
+            width: 60px;
+            height: 100px;
+        }
+
+        .bush {
+            position: absolute;
+            bottom: 20%;
+            width: 40px;
+            height: 30px;
+            background: #228B22;
+            border-radius: 50%;
+        }
+
+        @keyframes fly {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        @keyframes flapWings {
+            0% { transform: scaleY(1) rotate(0deg); }
+            50% { transform: scaleY(0.7) rotate(15deg); }
+            100% { transform: scaleY(1) rotate(0deg); }
+        }
+
+        @keyframes eaten {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.5) rotate(180deg); opacity: 0.5; }
+            100% { transform: scale(0) rotate(360deg); opacity: 0; }
+        }
+
+        @keyframes gobble {
+            0% { transform: scaleY(1); }
+            50% { transform: scaleY(2.5); }
+            100% { transform: scaleY(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="scene">
+        <div class="input-container">
+            <input type="text" placeholder="Type something here!" id="wordInput">
+        </div>
+        <div class="water"></div>
+    </div>
+
+    <script>
+        const scene = document.querySelector('.scene');
+        const input = document.querySelector('#wordInput');
+        
+        // Environment creation remains same
+        function createEnvironment() {
+            for(let i = 0; i < 5; i++) {
+                const tree = document.createElement('div');
+                tree.className = 'tree';
+                tree.style.left = `${Math.random() * 90}%`;
+                tree.innerHTML = `
+                    <svg width="60" height="100" viewBox="0 0 60 100">
+                        <rect x="25" y="50" width="10" height="50" fill="#8B4513"/>
+                        <polygon points="30,0 0,50 60,50" fill="#228B22"/>
+                        <polygon points="30,20 5,60 55,60" fill="#228B22"/>
+                    </svg>
+                `;
+                scene.appendChild(tree);
+            }
+
+            for(let i = 0; i < 8; i++) {
+                const bush = document.createElement('div');
+                bush.className = 'bush';
+                bush.style.left = `${Math.random() * 90}%`;
+                scene.appendChild(bush);
+            }
+        }
+
+        // Create duck with new design
+        function createDuck() {
+            const duck = document.createElement('div');
+            duck.className = 'duck';
+            duck.innerHTML = `
+                <svg width="48" height="48" viewBox="0 0 48 48">
+                    <!-- Body -->
+                    <path class="body" d="M8,24 L38,24 L42,28 L38,32 L8,32 L4,28 Z" fill="#FFD700"/>
+                    
+                    <!-- Wings -->
+                    <g class="wing-left" style="animation: flapWings 0.5s infinite">
+                        <path d="M18,24 L28,16 L34,24" fill="#FFD700"/>
+                    </g>
+                    <g class="wing-right" style="animation: flapWings 0.5s infinite">
+                        <path d="M18,32 L28,40 L34,32" fill="#FFD700"/>
+                    </g>
+                    
+                    <!-- Head -->
+                    <circle cx="38" cy="26" r="6" fill="#FFD700"/>
+                    
+                    <!-- Eye -->
+                    <circle cx="40" cy="24" r="2" fill="black"/>
+                    
+                    <!-- Bill -->
+                    <g class="bill">
+                        <path d="M44,24 L48,26 L44,28" fill="#FFA500"/>
+                        <path class="bill-bottom" d="M44,26 L48,28 L44,30" fill="#FFA500"/>
+                    </g>
+                </svg>
+            `;
+            duck.style.left = '-50px';
+            duck.style.top = `${50 + Math.random() * 300}px`;
+            duck.style.animation = 'fly 1s infinite';
+            scene.appendChild(duck);
+            
+            let position = -50;
+            const animate = () => {
+                position += 2;
+                duck.style.left = `${position}px`;
+                
+                // Check for nearby words
+                const words = document.querySelectorAll('.word');
+                words.forEach(word => {
+                    if (word.dataset.canBeEaten === 'true') {
+                        const wordRect = word.getBoundingClientRect();
+                        const duckRect = duck.getBoundingClientRect();
+                        
+                        if (Math.abs(wordRect.left - duckRect.left) < 60 && 
+                            Math.abs(wordRect.top - duckRect.top) < 60) {
+                            eatWord(word, duck);
+                        }
+                    }
+                });
+                
+                if(position < window.innerWidth + 50) {
+                    requestAnimationFrame(animate);
+                } else {
+                    duck.remove();
+                }
+            };
+            animate();
+            
+            return duck;
+        }
+
+        // Create word (same as before)
+        function createWord(text, x, y) {
+            const word = document.createElement('div');
+            word.className = 'word';
+            word.textContent = text;
+            word.style.left = `${x}px`;
+            word.style.top = `${y}px`;
+            word.dataset.canBeEaten = 'false';
+            scene.appendChild(word);
+
+            let posX = x;
+            let posY = y;
+            let velX = (Math.random() - 0.5) * 3;
+            let velY = (Math.random() - 0.5) * 3;
+            
+            setTimeout(() => {
+                word.dataset.canBeEaten = 'true';
+            }, 5000);
+
+            const animate = () => {
+                posX += velX;
+                posY += velY;
+                word.style.left = `${posX}px`;
+                word.style.top = `${posY}px`;
+                
+                if(posX > 0 && posX < window.innerWidth && posY > 0 && posY < window.innerHeight && !word.dataset.eaten) {
+                    requestAnimationFrame(animate);
+                } else {
+                    word.remove();
+                }
+            };
+            animate();
+        }
+
+        // Enhanced eating animation
+        function eatWord(word, duck) {
+            if (!word.dataset.eaten) {
+                word.dataset.eaten = 'true';
+                word.style.animation = 'eaten 1s forwards';
+                
+                // Animate duck bill
+                const bill = duck.querySelector('.bill');
+                bill.style.animation = 'gobble 0.5s';
+                
+                // Add "quack" effect
+                const quack = document.createElement('div');
+                quack.style.position = 'absolute';
+                quack.style.left = word.style.left;
+                quack.style.top = word.style.top;
+                quack.style.color = 'white';
+                quack.style.fontSize = '24px';
+                quack.textContent = 'QUACK!';
+                quack.style.opacity = '0';
+                quack.style.transition = 'all 0.5s';
+                scene.appendChild(quack);
+                
+                setTimeout(() => {
+                    quack.style.opacity = '1';
+                    quack.style.transform = 'translateY(-20px)';
+                }, 50);
+                
+                setTimeout(() => {
+                    word.remove();
+                    quack.remove();
+                    bill.style.animation = '';
+                }, 1000);
+            }
+        }
+
+        // Initialize scene
+        createEnvironment();
+
+        // Spawn ducks
+        setInterval(() => {
+            createDuck();
+        }, 600);
+
+        // Handle input
+        input.addEventListener('keypress', (e) => {
+            if(e.key === 'Enter' && input.value.trim()) {
+                const ducks = document.querySelectorAll('.duck');
+                ducks.forEach(duck => {
+                    const rect = duck.getBoundingClientRect();
+                    createWord(input.value, rect.left, rect.top);
+                });
+                input.value = '';
+            }
+        });
+    </script>
+</div>
+</body>
+</html>
