@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Rolling Ball Game</title>
+  <title>Mr. GreenGo's Slope Game</title>
   <style>
     body { margin: 0; background: black; }
     canvas { display: block; }
@@ -13,6 +13,7 @@
       font-family: Arial, sans-serif;
       font-size: 24px;
       z-index: 100;
+      display: none; /* Hidden until we start the game */
     }
     #gameOver {
       position: fixed;
@@ -30,74 +31,343 @@
       border-radius: 10px;
       cursor: pointer;
     }
+    /* TITLE SCREEN */
+    #titleScreen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: black;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      font-size: 32px;
+      z-index: 200;
+    }
+    #difficultyButtons {
+      margin-top: 30px;
+    }
+    .difficultyButton {
+      margin: 0 20px;
+      padding: 10px 20px;
+      font-size: 28px;
+      cursor: pointer;
+      border: 2px solid #ccc;
+      background: #222;
+      color: #fff;
+      border-radius: 10px;
+      transition: 0.3s;
+    }
+    .difficultyButton:hover {
+      background: #444;
+    }
   </style>
 </head>
 <body>
+  <!-- Title Screen -->
+  <div id="titleScreen">
+    <div style="font-size:50px; margin-bottom:20px;">
+      Mr. GreenGo's Slope Game
+    </div>
+    <div>Choose Your Difficulty (50% slower):</div>
+    <div id="difficultyButtons">
+      <button class="difficultyButton" id="easyBtn">🐢 Easy</button>
+      <button class="difficultyButton" id="mediumBtn">🐇 Medium</button>
+      <button class="difficultyButton" id="hardBtn">🐆 Hard</button>
+    </div>
+  </div>
+
+  <!-- Score and Game Over overlay -->
   <div id="score">Score: 0</div>
   <div id="gameOver">Game Over!<br>Click to restart</div>
-  
-  <!-- Three.js from CDN -->
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
-    /*********************
-     * Global Variables
-     *********************/
-    let camera, scene, renderer, ball;
+    // --------------------------------------------------
+    // Global Variables
+    // --------------------------------------------------
+    let camera, scene, renderer;
+    let ball = null;
     let paths = [];
     let obstacles = [];
+
     let score = 0;
-    let gameActive = true;
+    let gameActive = false;
     let isFalling = false;
+    let isResetting = false;
+
+    // We'll start the ball behind the first arch
     let lastPathZ = 0;
-    let ballVelocity = { x: 0, y: 0, z: 0.3 };
+    let lastObstacleZ = 40; // so first arch row is at z=40
+
+    let ballVelocity = { x: 0, y: 0, z: 0 };
+
+    // Default speeds (reduced 50%)
+    let BASE_FORWARD_SPEED = 0.1;
+    let BALL_SPEED = 0.1;
+
+    // For ramping speed
+    let startTime = 0;
+
+    // For limiting correct arch
+    let lastCorrectIndex = -1;
+
+    // We'll detect touches
     let touchStartX = 0;
 
-    const BALL_RADIUS = 0.5;
-    const SEGMENT_LENGTH = 30;
-    const PATH_WIDTH = 15;
-    const BALL_SPEED = 0.3;
-    const BASE_FORWARD_SPEED = 0.3;
+    // Path geometry constants
+    const BALL_RADIUS     = 0.6;
+    const SEGMENT_LENGTH  = 30;
+    const PATH_WIDTH      = 15;
 
-    /*********************
-     * Word Library
-     *
-     * Each set is an object with a correct word and an array of two misspellings.
-     *********************/
-    const wordLibrary = [
-      { correct: "cat",  incorrect: ["cit", "cet"] },
-      { correct: "dog",  incorrect: ["dug", "dgo"] },
-      { correct: "sun",  incorrect: ["son", "snu"] },
-      { correct: "car",  incorrect: ["cra", "acr"] },
-      { correct: "book", incorrect: ["bokk", "buk"] }
-    ];
+    // --------------------------------------------
+    // KEY CHANGE: Increase archway spacing
+    // e.g. from 40 to 80
+    // --------------------------------------------
+    const OBSTACLE_SPACING = 80;
 
-    /*********************
-     * Utility Functions
-     *********************/
-    // Returns the terrain height at z using sine waves.
+    // UI elements
+    const titleScreenDiv = document.getElementById("titleScreen");
+    const scoreDiv = document.getElementById("score");
+    const gameOverDiv = document.getElementById("gameOver");
+
+    // --------------------------------------------------
+    // Word sets
+    // --------------------------------------------------
+   const wordSets = [
+    { correct: "cat",  incorrect: ["cet", "cit"] },
+    { correct: "dog",  incorrect: ["dug", "dag"] },
+    { correct: "book", incorrect: ["booc", "bouk"] },
+    { correct: "tree", incorrect: ["trea", "trii"] },
+    { correct: "car",  incorrect: ["cur", "cer"] },
+    { correct: "sun",  incorrect: ["san", "sen"] },
+    { correct: "moon", incorrect: ["maan", "mun"] },
+    { correct: "fish", incorrect: ["fesh", "fush"] },
+    { correct: "star", incorrect: ["ster", "stur"] },
+    { correct: "rain", incorrect: ["reign", "ran"] },
+    { correct: "boat", incorrect: ["bote", "boet"] },
+    { correct: "house", incorrect: ["hous", "huse"] },
+    { correct: "chair", incorrect: ["chare", "cheir"] },
+    { correct: "table", incorrect: ["tabel", "tayble"] },
+    { correct: "apple", incorrect: ["aple", "appl"] },
+    { correct: "grape", incorrect: ["graip", "grap"] },
+    { correct: "plane", incorrect: ["plaine", "plene"] },
+    { correct: "horse", incorrect: ["horce", "harse"] },
+    { correct: "snake", incorrect: ["snak", "snaik"] },
+    { correct: "cloud", incorrect: ["clowd", "claud"] },
+    { correct: "train", incorrect: ["trane", "trein"] },
+    { correct: "clock", incorrect: ["clok", "cluc"] },
+    { correct: "mouse", incorrect: ["mous", "muse"] },
+    { correct: "bread", incorrect: ["bred", "briad"] },
+    { correct: "light", incorrect: ["lite", "ligh"] },
+    { correct: "river", incorrect: ["rivar", "rever"] },
+    { correct: "music", incorrect: ["musick", "musik"] },
+    { correct: "garden", incorrect: ["gardan", "gardan"] },
+    { correct: "pencil", incorrect: ["pensil", "pansil"] },
+    { correct: "window", incorrect: ["windo", "windeau"] }
+];
+
+
+    // --------------------------------------------------
+    // Title Screen
+    // --------------------------------------------------
+    function showTitleScreen() {
+      console.log("Showing title screen");
+      titleScreenDiv.style.display = "flex";
+      scoreDiv.style.display = "none";
+      gameOverDiv.style.display = "none";
+      gameActive = false;
+    }
+
+    function startGameWithDifficulty(forward, side) {
+      console.log("Chosen difficulty:", forward, side);
+
+      // Hide the title screen
+      titleScreenDiv.style.display = "none";
+      scoreDiv.style.display = "block";
+
+      // Store speeds
+      BASE_FORWARD_SPEED = forward;
+      BALL_SPEED = side;
+
+      // Now init the game
+      initGame();
+      setupEventListeners();
+    }
+
+    // --------------------------------------------------
+    // Disposal
+    // --------------------------------------------------
+    function disposeAll(object) {
+      object.traverse(child => {
+        if (child.geometry) {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+    }
+
+    // --------------------------------------------------
+    // Creating Text Sprites
+    // --------------------------------------------------
+    function createTextSprite(message) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '72px Arial'; // doubled
+      ctx.fillText(message, 10, 54);
+
+      const texture = new THREE.Texture(canvas);
+      texture.needsUpdate = true;
+
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      sprite.scale.set(4, 1.5, 1);
+      return sprite;
+    }
+
+    // --------------------------------------------------
+    // Slope
+    // --------------------------------------------------
     function getHeightAt(z) {
       const baseHeight = Math.sin(z * 0.05) * 2;
-      const variation = Math.sin(z * 0.1) * 1;
+      const variation  = Math.sin(z * 0.1) * 1;
       return baseHeight + variation;
     }
-    // Returns the slope angle by comparing two nearby heights.
+
     function getSlopeAngleAt(z) {
       const h1 = getHeightAt(z);
       const h2 = getHeightAt(z + 0.1);
       return Math.atan2(h2 - h1, 0.1);
     }
-    // Creates a simple path geometry from startZ.
+
+    // --------------------------------------------------
+    // Ball Texture
+    // --------------------------------------------------
+    function createBallTexture() {
+      const canvas = document.createElement("canvas");
+      canvas.width = 64;
+      canvas.height = 64;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ff0000";
+      ctx.fillRect(0, 0, 64, 64);
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 64; i += 16) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, 64);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(64, i);
+        ctx.stroke();
+      }
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    // --------------------------------------------------
+    // createArchRow
+    // --------------------------------------------------
+    function createArchRow(zPosition) {
+      const rowGroup = new THREE.Group();
+      const archHeight = 4;
+
+      const { correct, incorrect } = wordSets[Math.floor(Math.random() * wordSets.length)];
+
+      let newIndex;
+      do {
+        newIndex = Math.floor(Math.random() * 3);
+      } while (newIndex === lastCorrectIndex);
+      lastCorrectIndex = newIndex;
+
+      const archWords = [];
+      let incCounter = 0;
+      for (let i = 0; i < 3; i++) {
+        if (i === newIndex) {
+          archWords.push({ text: correct, isCorrect: true });
+        } else {
+          archWords.push({ text: incorrect[incCounter], isCorrect: false });
+          incCounter++;
+        }
+      }
+
+      const archPositions = [-4, 0, 4];
+      for (let i = 0; i < 3; i++) {
+        const xPos = archPositions[i];
+
+        // Pillars & beam
+        const pillarGeom = new THREE.BoxGeometry(0.5, archHeight, 0.5);
+        const pillarMat  = new THREE.MeshPhongMaterial({ color: 0x8B0000 });
+        const leftPillar  = new THREE.Mesh(pillarGeom, pillarMat);
+        leftPillar.position.set(xPos - 1.5, archHeight / 2, 0);
+        const rightPillar = new THREE.Mesh(pillarGeom, pillarMat);
+        rightPillar.position.set(xPos + 1.5, archHeight / 2, 0);
+        const beamGeom    = new THREE.BoxGeometry(3.5, 0.5, 0.5);
+        const beam        = new THREE.Mesh(beamGeom, pillarMat);
+        beam.position.set(xPos, archHeight, 0);
+
+        rowGroup.add(leftPillar, rightPillar, beam);
+
+        // Word text
+        const wordInfo = archWords[i];
+        const sprite   = createTextSprite(wordInfo.text);
+        sprite.position.set(xPos, archHeight + 1.5, 0);
+        rowGroup.add(sprite);
+
+        // Boom gate
+        const gateGeom = new THREE.BoxGeometry(3, 0.2, 0.2);
+        const gateMat  = new THREE.MeshPhongMaterial({ color: 0x333333 });
+        const gate     = new THREE.Mesh(gateGeom, gateMat);
+
+        gate.position.set(xPos, 1, 0);
+        gate.userData.isBarrier = !wordInfo.isCorrect;
+        gate.userData.isCorrect = wordInfo.isCorrect;
+        gate.userData.archX = xPos;
+
+        rowGroup.add(gate);
+      }
+
+      rowGroup.position.set(0, getHeightAt(zPosition), zPosition);
+      rowGroup.rotation.x = getSlopeAngleAt(zPosition);
+
+      scene.add(rowGroup);
+      obstacles.push(rowGroup);
+
+      if (obstacles.length > 5) {
+        const oldObs = obstacles.shift();
+        scene.remove(oldObs);
+        disposeAll(oldObs);
+      }
+    }
+
+    // --------------------------------------------------
+    // createPathSegment
+    // --------------------------------------------------
     function createPathGeometry(startZ) {
       const segments = 20;
       const positions = [];
       const uvs = [];
       for (let i = 0; i <= segments; i++) {
-        const z = startZ + (i / segments) * SEGMENT_LENGTH;
-        const nextZ = startZ + ((i + 1) / segments) * SEGMENT_LENGTH;
-        const y1 = getHeightAt(z);
-        const y2 = getHeightAt(nextZ);
+        const z    = startZ + (i / segments) * SEGMENT_LENGTH;
+        const nextZ= startZ + ((i + 1) / segments) * SEGMENT_LENGTH;
+        const y1   = getHeightAt(z);
+        const y2   = getHeightAt(nextZ);
+
         if (i < segments) {
-          // Two triangles per segment.
           positions.push(
             -PATH_WIDTH/2, y1, z,
              PATH_WIDTH/2, y1, z,
@@ -118,112 +388,7 @@
       geometry.computeVertexNormals();
       return geometry;
     }
-    // Creates a text sprite from a canvas texture.
-    function createTextSprite(message, parameters) {
-      parameters = parameters || {};
-      const fontface = parameters.fontface || "Arial";
-      const fontsize = parameters.fontsize || 18;
-      const borderThickness = parameters.borderThickness || 4;
-      const borderColor = parameters.borderColor || { r: 0, g: 0, b: 0, a: 1.0 };
-      const backgroundColor = parameters.backgroundColor || { r: 255, g: 255, b: 255, a: 1.0 };
 
-      // Measure text width using a temporary canvas.
-      const tempCanvas = document.createElement("canvas");
-      const tempContext = tempCanvas.getContext("2d");
-      tempContext.font = fontsize + "px " + fontface;
-      const metrics = tempContext.measureText(message);
-      const textWidth = metrics.width;
-
-      // Create the actual canvas.
-      const canvas = document.createElement("canvas");
-      canvas.width = textWidth + borderThickness * 2;
-      canvas.height = fontsize * 1.4 + borderThickness * 2;
-      const context = canvas.getContext("2d");
-      context.font = fontsize + "px " + fontface;
-
-      // Draw background and border.
-      context.fillStyle = `rgba(${backgroundColor.r},${backgroundColor.g},${backgroundColor.b},${backgroundColor.a})`;
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.strokeStyle = `rgba(${borderColor.r},${borderColor.g},${borderColor.b},${borderColor.a})`;
-      context.lineWidth = borderThickness;
-      context.strokeRect(0, 0, canvas.width, canvas.height);
-
-      // Draw the text.
-      context.fillStyle = "rgba(0, 0, 0, 1.0)";
-      context.textAlign = "center";
-      context.textBaseline = "middle";
-      context.fillText(message, canvas.width/2, canvas.height/2);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.minFilter = THREE.LinearFilter;
-      const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-      const sprite = new THREE.Sprite(spriteMaterial);
-      sprite.scale.set(5, 2.5, 1.0);
-      return sprite;
-    }
-
-    /*********************
-     * Initialization
-     *********************/
-    function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
-
-      // Lighting.
-      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      dirLight.position.set(10, 20, 10);
-      scene.add(dirLight);
-
-      // Create the ball (with a grid‐pattern texture).
-      const ballGeometry = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
-      const ballTexture = createBallTexture();
-      const ballMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000, map: ballTexture });
-      ball = new THREE.Mesh(ballGeometry, ballMaterial);
-      ball.position.set(0, BALL_RADIUS + getHeightAt(0), 0);
-      scene.add(ball);
-
-      // Create initial path segments.
-      for (let i = 0; i < 4; i++) {
-        createPathSegment(lastPathZ);
-        lastPathZ += SEGMENT_LENGTH;
-      }
-      updateCamera();
-    }
-    // Creates a grid texture for the ball.
-    function createBallTexture() {
-      const canvas = document.createElement("canvas");
-      canvas.width = 64;
-      canvas.height = 64;
-      const context = canvas.getContext("2d");
-      context.fillStyle = "#ff0000";
-      context.fillRect(0, 0, 64, 64);
-      context.strokeStyle = "#ffffff";
-      context.lineWidth = 2;
-      for (let i = 0; i < 64; i += 16) {
-        context.beginPath();
-        context.moveTo(i, 0);
-        context.lineTo(i, 64);
-        context.stroke();
-        context.beginPath();
-        context.moveTo(0, i);
-        context.lineTo(64, i);
-        context.stroke();
-      }
-      return new THREE.CanvasTexture(canvas);
-    }
-
-    /*********************
-     * Creating a Path Segment and Obstacles
-     *
-     * For obstacles we randomly either create a cube (full collider)
-     * or a triple arch obstacle. For the triple arch, we build three separate
-     * arch sub-groups – one of which is passable (true) and the other two are false.
-     * Each arch gets a text sprite with one of three words chosen from our library.
-     *********************/
     function createPathSegment(startZ) {
       const geometry = createPathGeometry(startZ);
       const material = new THREE.MeshPhongMaterial({
@@ -232,294 +397,343 @@
         wireframe: false
       });
       const path = new THREE.Mesh(geometry, material);
+
+      // Mark this path so we skip collision with it
+      path.userData.isPath = true;
+
       scene.add(path);
       paths.push(path);
 
-      // Remove old paths.
       if (paths.length > 5) {
-        scene.remove(paths[0]);
-        paths.shift();
+        const oldPath = paths.shift();
+        scene.remove(oldPath);
+        disposeAll(oldPath);
       }
+    }
 
-      // Determine the obstacle location and slope.
-      const obsZ = startZ + SEGMENT_LENGTH/2;
-      const obsHeight = getHeightAt(obsZ);
-      const slopeAngle = getSlopeAngleAt(obsZ);
+    // --------------------------------------------------
+    // updateBall
+    // --------------------------------------------------
+    function updateBall() {
+      if (!ball) return;
 
-      if (Math.random() > 0.3) {
-        if (Math.random() > 0.5) {
-          // Create a cube obstacle (full collider).
-          const obstacleWidth = PATH_WIDTH * 0.15;
-          const cube = new THREE.Mesh(
-            new THREE.BoxGeometry(obstacleWidth, 2, 1),
-            new THREE.MeshPhongMaterial({ color: 0x0000ff })
-          );
-          cube.position.set(
-            (Math.random()-0.5) * (PATH_WIDTH-obstacleWidth),
-            obsHeight+1,
-            obsZ
-          );
-          cube.rotation.x = slopeAngle;
-          cube.userData.isFullCollider = true;
-          scene.add(cube);
-          obstacles.push(cube);
-        } else {
-          // Create a triple arch obstacle.
-          // We will create three separate arch items inside an archGroup.
-          const archGroup = new THREE.Group();
-          const archHeight = 3;
-          const archWidth = PATH_WIDTH * 0.2; // opening width per arch.
-          const pillarWidth = 0.5;
-          const archDepth = 1;
-          const spacing = archWidth + pillarWidth; // horizontal spacing.
+      if (!isFalling) {
+        let elapsedSec = (performance.now() - startTime) / 1000;
+        let speedMultiplier = Math.pow(2, elapsedSec / 30);
 
-          // First, choose a random word set from our library.
-          const chosenSet = wordLibrary[Math.floor(Math.random()*wordLibrary.length)];
-          // We need one correct word and two incorrect ones.
-          // Copy the two false words.
-          const falseWords = chosenSet.incorrect.slice();
-          // Randomly choose which arch (0, 1, or 2) will be passable.
-          const trueIndex = Math.floor(Math.random()*3);
-          // Prepare an array of words for the three arches.
-          const archWords = [];
-          for (let i = 0; i < 3; i++) {
-            if (i === trueIndex) {
-              archWords.push(chosenSet.correct);
-            } else {
-              // Remove one false word.
-              archWords.push(falseWords.shift());
-            }
-          }
+        const slopeAngle = getSlopeAngleAt(ball.position.z);
+        const forwardSpeed = BASE_FORWARD_SPEED * speedMultiplier * (1 - Math.sin(slopeAngle)*0.5);
 
-          // Create three arch sub-groups.
-          // We'll loop with i from -1 to 1 so that (i+1) is 0,1,2.
-          for (let i = -1; i <= 1; i++) {
-            const archItem = new THREE.Group();
-            const index = i + 1; // 0, 1, or 2.
-            // Mark this arch as passable (true) if its index equals trueIndex.
-            archItem.userData.passable = (index === trueIndex);
+        ball.position.x += ballVelocity.x;
+        ball.position.z += forwardSpeed;
 
-            // Create the pillars and top arch for this arch.
-            // Left pillar.
-            const leftPillar = new THREE.Mesh(
-              new THREE.BoxGeometry(pillarWidth, archHeight, archDepth),
-              new THREE.MeshPhongMaterial({ color: 0x8B0000 })
-            );
-            leftPillar.position.set(i * spacing - archWidth/2 - pillarWidth/2, archHeight/2, 0);
-            leftPillar.userData.isPillar = true;
-            archItem.add(leftPillar);
-            // Right pillar.
-            const rightPillar = new THREE.Mesh(
-              new THREE.BoxGeometry(pillarWidth, archHeight, archDepth),
-              new THREE.MeshPhongMaterial({ color: 0x8B0000 })
-            );
-            rightPillar.position.set(i * spacing + archWidth/2 + pillarWidth/2, archHeight/2, 0);
-            rightPillar.userData.isPillar = true;
-            archItem.add(rightPillar);
-            // Top arch (the horizontal beam).
-            const topArch = new THREE.Mesh(
-              new THREE.BoxGeometry(archWidth + pillarWidth*2, pillarWidth, archDepth),
-              new THREE.MeshPhongMaterial({ color: 0x8B0000 })
-            );
-            topArch.position.set(i * spacing, archHeight, 0);
-            topArch.userData.isPillar = true;
-            archItem.add(topArch);
+        const targetHeight = getHeightAt(ball.position.z) + BALL_RADIUS;
+        ball.position.y = targetHeight;
 
-            // Create the text sprite for this arch using its assigned word.
-            const textSprite = createTextSprite(archWords[index], {
-              fontface: "Arial",
-              fontsize: 24,
-              borderThickness: 2,
-              borderColor: { r: 0, g: 0, b: 255, a: 1.0 },
-              backgroundColor: { r: 255, g: 255, b: 255, a: 0.5 }
-            });
-            // Position the text above the arch.
-            textSprite.position.set(0, archHeight + 1, 0);
-            archItem.add(textSprite);
+        // Roll
+        ball.rotation.x = slopeAngle;
+        ball.rotation.z -= ballVelocity.x / BALL_RADIUS;
+        ball.rotation.x -= forwardSpeed / BALL_RADIUS;
 
-            // Add this arch item to the archGroup.
-            archGroup.add(archItem);
-          }
-
-          // Mark the entire group as a triple arch obstacle.
-          archGroup.userData.isTripleArch = true;
-          archGroup.position.set(0, obsHeight, obsZ);
-          archGroup.rotation.x = slopeAngle;
-          scene.add(archGroup);
-          obstacles.push(archGroup);
+        // Edge check
+        if (Math.abs(ball.position.x) > (PATH_WIDTH/2 - BALL_RADIUS)) {
+          isFalling = true;
+          ballVelocity.y = 0;
         }
+      } else {
+        // falling
+        ballVelocity.y -= 0.015;
+        ball.position.y += ballVelocity.y;
+        ball.rotation.x += 0.1;
+        ball.rotation.z += 0.1;
 
-        // Remove old obstacles.
-        if (obstacles.length > 10) {
-          scene.remove(obstacles[0]);
-          obstacles.shift();
+        // If we fall below path
+        if (ball.position.y < getHeightAt(ball.position.z) - 10) {
+          endGame();
         }
       }
     }
 
-    /*********************
-     * Camera and Ball Updates
-     *********************/
+    // --------------------------------------------------
+    // updateObstacles
+    // --------------------------------------------------
+    function updateObstacles() {
+      if (!ball) return;
+
+      const liftDistanceZ = 5;
+      for (const archGroup of obstacles) {
+        const distanceZ = archGroup.position.z - ball.position.z;
+        if (distanceZ < -2 || distanceZ > liftDistanceZ) continue;
+
+        for (const child of archGroup.children) {
+          if (child.userData && child.userData.isCorrect) {
+            const dx = child.userData.archX - ball.position.x;
+            if (Math.abs(dx) < 1.5) {
+              if (child.position.y < 3) {
+                child.position.y += 0.1;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // --------------------------------------------------
+    // checkCollisions
+    // --------------------------------------------------
+    function checkCollisions() {
+      if (!gameActive || isFalling || !ball) return;
+
+      const ballSphere = new THREE.Sphere(ball.position.clone(), BALL_RADIUS);
+
+      for (const archGroup of obstacles) {
+        for (const child of archGroup.children) {
+          if (!child.isMesh) continue;
+
+          // Skip path or non-barrier gates
+          if (child.userData && (child.userData.isPath || child.userData.isBarrier === false)) {
+            continue;
+          }
+
+          // bounding box
+          const box = new THREE.Box3().setFromObject(child);
+          if (box.intersectsSphere(ballSphere)) {
+            console.log("Collision with:", child.userData);
+            endGame();
+            return;
+          }
+        }
+      }
+    }
+
+    // --------------------------------------------------
+    // updateGame
+    // --------------------------------------------------
+    function updateGame() {
+      if (!ball || !gameActive || isResetting) return;
+
+      updateBall();
+      updateCamera();
+      updateObstacles();
+
+      if (ball.position.z > lastPathZ - SEGMENT_LENGTH*2) {
+        createPathSegment(lastPathZ);
+        lastPathZ += SEGMENT_LENGTH;
+      }
+      if (ball.position.z > lastObstacleZ) {
+        // Now that OBSTACLE_SPACING = 80, sets are farther apart
+        createArchRow(lastObstacleZ + OBSTACLE_SPACING);
+        lastObstacleZ += OBSTACLE_SPACING;
+      }
+
+      checkCollisions();
+
+      if (!isFalling && gameActive) {
+        score++;
+        scoreDiv.textContent = `Score: ${score}`;
+      }
+    }
+
+    // --------------------------------------------------
+    // updateCamera
+    // --------------------------------------------------
     function updateCamera() {
+      if (!ball) return;
       const slopeAngle = getSlopeAngleAt(ball.position.z);
       const lookAheadDistance = 10;
       camera.position.z = ball.position.z - lookAheadDistance * Math.cos(slopeAngle);
       camera.position.y = ball.position.y + 5 - lookAheadDistance * Math.sin(slopeAngle);
       camera.position.x = ball.position.x;
-      const targetPoint = new THREE.Vector3(
+
+      const target = new THREE.Vector3(
         ball.position.x,
         ball.position.y + Math.sin(slopeAngle) * 2,
         ball.position.z + Math.cos(slopeAngle) * 2
       );
-      camera.lookAt(targetPoint);
-    }
-    function updateBall() {
-      if (!isFalling) {
-        const slopeAngle = getSlopeAngleAt(ball.position.z);
-        const forwardSpeed = BASE_FORWARD_SPEED * (1 - Math.sin(slopeAngle)*0.5);
-        ball.position.x += ballVelocity.x;
-        ball.position.z += forwardSpeed;
-        const targetHeight = getHeightAt(ball.position.z) + BALL_RADIUS;
-        ball.position.y = targetHeight;
-        ball.rotation.x = slopeAngle;
-        ball.rotation.z -= ballVelocity.x / BALL_RADIUS;
-        ball.rotation.x -= forwardSpeed / BALL_RADIUS;
-        if (Math.abs(ball.position.x) > PATH_WIDTH/2 - BALL_RADIUS) {
-          isFalling = true;
-          ballVelocity.y = 0;
-        }
-      } else {
-        ballVelocity.y -= 0.015;
-        ball.position.y += ballVelocity.y;
-        ball.rotation.x += 0.1;
-        ball.rotation.z += 0.1;
-        if (ball.position.y < getHeightAt(ball.position.z) - 10) {
-          gameActive = false;
-          document.getElementById("gameOver").style.display = "block";
-        }
-      }
+      camera.lookAt(target);
     }
 
-    /*********************
-     * Game Update and Collision Detection
-     *
-     * For cube obstacles we check collisions normally.
-     * For triple arch obstacles we loop through each arch item;
-     * if an arch is not passable (a false arch) then collision with any of its pillars triggers game over.
-     *********************/
-    function updateGame() {
-      updateBall();
-      updateCamera();
-      if (ball.position.z > lastPathZ - SEGMENT_LENGTH*2) {
-        createPathSegment(lastPathZ);
-        lastPathZ += SEGMENT_LENGTH;
-      }
-      if (!isFalling) {
-        score++;
-        document.getElementById("score").textContent = `Score: ${score}`;
-      }
-      // Collision detection.
-      const ballBox = new THREE.Box3().setFromObject(ball);
-      obstacles.forEach(obstacle => {
-        if (obstacle.userData.isFullCollider) {
-          const obsBox = new THREE.Box3().setFromObject(obstacle);
-          if (ballBox.intersectsBox(obsBox)) {
-            gameActive = false;
-            document.getElementById("gameOver").style.display = "block";
-          }
-        } else if (obstacle.userData.isTripleArch) {
-          // For each arch item, only check false arches.
-          obstacle.children.forEach(archItem => {
-            if (!archItem.userData.passable) {
-              archItem.children.forEach(child => {
-                if (child.userData.isPillar) {
-                  const childBox = new THREE.Box3().setFromObject(child);
-                  if (ballBox.intersectsBox(childBox)) {
-                    gameActive = false;
-                    document.getElementById("gameOver").style.display = "block";
-                  }
-                }
-              });
-            }
-          });
-        }
-      });
+    // --------------------------------------------------
+    // endGame
+    // --------------------------------------------------
+    function endGame() {
+      console.log("endGame triggered");
+      gameActive = false;
+      gameOverDiv.style.display = "block";
     }
 
-    /*********************
-     * Reset and Animation
-     *********************/
-    function resetGame() {
-      ball.position.set(0, BALL_RADIUS + getHeightAt(0), 0);
-      ball.rotation.set(0, 0, 0);
-      ballVelocity = { x: 0, y: 0, z: BASE_FORWARD_SPEED };
-      isFalling = false;
-      gameActive = true;
-      score = 0;
-      document.getElementById("score").textContent = "Score: 0";
-      document.getElementById("gameOver").style.display = "none";
-      paths.forEach(path => scene.remove(path));
-      obstacles.forEach(obs => scene.remove(obs));
+    // --------------------------------------------------
+    // showTitleAgain
+    // --------------------------------------------------
+    function showTitleAgain() {
+      console.log("Returning to title screen...");
+      gameOverDiv.style.display = "none";
+
+      // Dispose everything
+      while (scene && scene.children.length > 0) {
+        const child = scene.children[0];
+        scene.remove(child);
+        disposeAll(child);
+      }
       paths = [];
       obstacles = [];
+      ball = null;  // so we won't reference it
+      // Reset to start positions
       lastPathZ = 0;
-      for (let i = 0; i < 4; i++) {
+      lastObstacleZ = 40;  // first arch row at z=40
+      score = 0;
+      isFalling = false;
+      ballVelocity = { x: 0, y: 0, z: 0 };
+      isResetting = false;
+      gameActive = false;
+
+      showTitleScreen();
+    }
+
+    // --------------------------------------------------
+    // initGame
+    // --------------------------------------------------
+    function initGame() {
+      console.log("initGame with speeds:", BASE_FORWARD_SPEED, BALL_SPEED);
+
+      scene = new THREE.Scene();
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(10, 20, 10);
+      scene.add(dirLight);
+
+      // create the ball
+      const ballGeometry = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
+      const ballTexture  = createBallTexture();
+      const ballMaterial = new THREE.MeshPhongMaterial({
+        color: 0xff0000, map: ballTexture
+      });
+      ball = new THREE.Mesh(ballGeometry, ballMaterial);
+
+      // place the ball at z=-10
+      ball.position.set(0, getHeightAt(-10) + BALL_RADIUS, -10);
+      scene.add(ball);
+
+      // reset arrays
+      paths = [];
+      obstacles = [];
+      score = 0;
+      isFalling = false;
+      isResetting = false;
+      gameActive = true;
+
+      // speed ramp
+      startTime = performance.now();
+
+      // set velocity
+      ballVelocity = { x: 0, y: 0, z: BASE_FORWARD_SPEED };
+      lastCorrectIndex = -1;
+
+      // path segments in front
+      lastPathZ = -10; 
+      for (let i = 0; i < 5; i++) {
         createPathSegment(lastPathZ);
         lastPathZ += SEGMENT_LENGTH;
       }
-    }
-    function animate() {
-      requestAnimationFrame(animate);
-      if (gameActive) { updateGame(); }
-      renderer.render(scene, camera);
+
+      scoreDiv.textContent = "Score: 0";
+      scoreDiv.style.display = "block";
+      gameOverDiv.style.display = "none";
     }
 
-    /*********************
-     * Input Handlers
-     *********************/
-    function onKeyDown(event) {
-      if (!gameActive || isFalling) return;
-      if (event.key === "ArrowLeft") {
-        ballVelocity.x = -BALL_SPEED;
-      } else if (event.key === "ArrowRight") {
+    // --------------------------------------------------
+    // Controls (INVERTED)
+    // --------------------------------------------------
+    function onKeyDown(e) {
+      if (!gameActive || isFalling || !ball) return;
+      // Inverted:
+      if (e.key === "ArrowLeft") {
         ballVelocity.x = BALL_SPEED;
+      } else if (e.key === "ArrowRight") {
+        ballVelocity.x = -BALL_SPEED;
       }
     }
-    function onKeyUp(event) {
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    function onKeyUp(e) {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         ballVelocity.x = 0;
       }
     }
-    function handleTouchStart(event) {
-      if (!gameActive || isFalling) return;
-      touchStartX = event.touches[0].clientX;
+
+    // Touch also INVERTED
+    function handleTouchStart(e) {
+      if (!gameActive || isFalling || !ball) return;
+      touchStartX = e.touches[0].clientX;
     }
-    function handleTouchMove(event) {
-      if (!gameActive || isFalling) return;
-      const touchX = event.touches[0].clientX;
+    function handleTouchMove(e) {
+      if (!gameActive || isFalling || !ball) return;
+      const touchX = e.touches[0].clientX;
       const diff = touchX - touchStartX;
-      ballVelocity.x = diff > 0 ? -BALL_SPEED : BALL_SPEED;
+
+      // If user drags right => move left, etc. (inverted)
+      ballVelocity.x = (diff > 0) ? -BALL_SPEED : BALL_SPEED;
+
       touchStartX = touchX;
     }
     function handleTouchEnd() {
       ballVelocity.x = 0;
     }
 
-    /*********************
-     * Start the Game
-     *********************/
-    init();
+    function setupEventListeners() {
+      window.addEventListener("keydown", onKeyDown);
+      window.addEventListener("keyup", onKeyUp);
+      window.addEventListener("touchstart", handleTouchStart);
+      window.addEventListener("touchmove", handleTouchMove);
+      window.addEventListener("touchend", handleTouchEnd);
+
+      gameOverDiv.addEventListener("click", showTitleAgain);
+    }
+
+    // --------------------------------------------------
+    // animate
+    // --------------------------------------------------
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Only update if we have a valid scene & ball & active
+      if (scene && ball && gameActive && !isResetting) {
+        updateGame();
+      }
+      if (renderer && camera && scene) {
+        renderer.render(scene, camera);
+      }
+    }
+
+    // --------------------------------------------------
+    // Bootstrapping
+    // --------------------------------------------------
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+
+    // Start with the title screen
+    showTitleScreen();
+
+    // Main loop
     animate();
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("touchstart", handleTouchStart);
-    window.addEventListener("touchmove", handleTouchMove);
-    window.addEventListener("touchend", handleTouchEnd);
-    document.getElementById("gameOver").addEventListener("click", resetGame);
+
     window.addEventListener("resize", () => {
-      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Difficulty button logic (50% speeds as before),
+    // but now with bigger spacing between arches (80).
+    document.getElementById("easyBtn").addEventListener("click", () => {
+      startGameWithDifficulty(0.1, 0.1);
+    });
+    document.getElementById("mediumBtn").addEventListener("click", () => {
+      startGameWithDifficulty(0.15, 0.15);
+    });
+    document.getElementById("hardBtn").addEventListener("click", () => {
+      startGameWithDifficulty(0.2, 0.2);
     });
   </script>
 </body>
