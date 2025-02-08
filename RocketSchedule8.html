@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Schedule</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: black;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #input-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #0ff;
+        }
+        #mission-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #0ff;
+            width: 300px;
+            display: none;
+        }
+        input {
+            width: 300px;
+            padding: 10px;
+            margin: 10px 0;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #0ff;
+            color: white;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #0ff;
+            border: none;
+            border-radius: 5px;
+            color: black;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #00cccc;
+        }
+        .activity {
+            margin: 10px 0;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .activity.current {
+            background: rgba(0, 255, 255, 0.2);
+        }
+        .progress-bar {
+            width: 100%;
+            height: 5px;
+            background: #333;
+            border-radius: 3px;
+            margin-top: 5px;
+        }
+        .progress {
+            height: 100%;
+            background: #0ff;
+            border-radius: 3px;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div id="input-container">
+        <h1 style="color: #0ff; margin-bottom: 20px;">Space Schedule</h1>
+        <input type="text" id="schedule-input" 
+               placeholder="math(10), reading(15), break(5)">
+        <p style="color: #888;">Enter activities as: activity(minutes)</p>
+        <button onclick="startSchedule()">Launch Mission</button>
+    </div>
+
+    <div id="mission-panel">
+        <h2 style="color: #0ff; margin-top: 0;">Mission Control</h2>
+        <div id="activities-list"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        // Resize handler
+        function resizeCanvas() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Game state
+        let activities = [];
+        let currentActivity = 0;
+        let timer = 0;
+        let stars = [];
+        let rocketPos = { x: 0, y: 0, angle: 0, orbitAngle: 0 };
+        let started = false;
+        let lastTime = performance.now();
+        let sunPulse = 0;
+        let videoStream = null;
+        let sunPhoto = null;
+        let planetPhotos = new Array(9).fill(null); // Array to store planet photos
+        
+        // Setup camera
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoStream = stream;
+                console.log('Camera initialized successfully');
+            } catch (error) {
+                console.error('Camera error:', error);
+                alert('Could not access camera. Please ensure camera permissions are granted.');
+            }
+        }
+        
+        // Initialize camera on page load
+        setupCamera();
+
+        // Create stars
+        for (let i = 0; i < 100; i++) {
+            stars.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                brightness: 0.5 + Math.random() * 0.5,
+                twinkleSpeed: 0.02 + Math.random() * 0.03,
+                phase: Math.random() * Math.PI * 2
+            });
+        }
+
+        function validateSchedule(input) {
+            const activities = input.split(',').map(a => a.trim());
+            if (activities.length > 8) {
+                alert('Maximum 8 activities allowed');
+                return false;
+            }
+
+            const pattern = /^[\w\s]+\(\d+\)$/;
+            for (const activity of activities) {
+                if (!pattern.test(activity)) {
+                    alert('Invalid format. Use: activity(minutes)');
+                    return false;
+                }
+                const duration = parseInt(activity.match(/\((\d+)\)/)[1]);
+                if (duration <= 0 || duration > 120) {
+                    alert('Duration must be between 1 and 120 minutes');
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function startSchedule() {
+            const input = document.getElementById('schedule-input').value;
+            if (!validateSchedule(input)) return;
+
+            const activityStrings = input.split(',').map(a => a.trim());
+            activities = activityStrings.map((activity, index) => {
+                const [name, duration] = activity.match(/(.*?)\((\d+)\)/).slice(1);
+                return {
+                    name: name.trim(),
+                    duration: parseInt(duration) * 60,
+                    angle: (Math.PI * 2 * index) / activityStrings.length,
+                    orbitRadius: 100 + index * 60,
+                    color: `hsl(${(index * 360) / activityStrings.length}, 70%, 50%)`
+                };
+            });
+
+            document.getElementById('input-container').style.display = 'none';
+            document.getElementById('mission-panel').style.display = 'block';
+            started = true;
+            lastTime = performance.now();
+            requestAnimationFrame(animate);
+            updateMissionPanel();
+        }
+
+        function drawStar(star, time) {
+            const twinkle = Math.sin(time * star.twinkleSpeed + star.phase);
+            ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness * (0.5 + twinkle * 0.5)})`;
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, 1, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawPlanet(planet, index) {
+            const x = width/2 + Math.cos(planet.angle) * planet.orbitRadius;
+            const y = height/2 + Math.sin(planet.angle) * planet.orbitRadius;
+
+            // Draw orbit
+            ctx.strokeStyle = index < currentActivity ? '#00ff00' : '#333';
+            ctx.beginPath();
+            ctx.arc(width/2, height/2, planet.orbitRadius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw planet
+            const planetSize = 20;
+            if (planetPhotos[index]) {
+                // Create circular clip for the photo
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, planetSize, 0, Math.PI * 2);
+                ctx.clip();
+                
+                // Draw the photo
+                const size = planetSize * 2;
+                ctx.drawImage(planetPhotos[index], 
+                    x - size/2, 
+                    y - size/2, 
+                    size, size);
+                ctx.restore();
+                
+                // Add color overlay
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = planet.color;
+                ctx.beginPath();
+                ctx.arc(x, y, planetSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            } else {
+                ctx.fillStyle = planet.color;
+                ctx.beginPath();
+                ctx.arc(x, y, planetSize, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw name
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText(planet.name, x, y + 35);
+            
+            // Draw duration below name
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#888';
+            ctx.fillText(`${Math.floor(planet.duration / 60)}min`, x, y + 55);
+
+            return { x, y };
+        }
+
+        function drawSun(currentTime) {
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const baseSize = 80;
+    
+    // Update sun pulse
+    sunPulse = (sunPulse + 0.02) % (Math.PI * 2);
+    const pulseFactor = Math.sin(sunPulse) * 0.1 + 1;
+    
+    // Draw sun glow layers
+    for (let i = 4; i >= 0; i--) {
+        const alpha = (4 - i) / 4;
+        const size = baseSize * (1 + i * 0.5) * pulseFactor;
+        const gradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, size
+        );
+        gradient.addColorStop(0, `rgba(255, 200, 0, ${alpha * 0.5})`);
+        gradient.addColorStop(1, 'rgba(255, 200, 0, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    if (sunPhoto) {
+        // Create circular clip for the photo
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, baseSize * pulseFactor, 0, Math.PI * 2);
+        ctx.clip();
+        
+        // Draw the photo
+        const size = baseSize * 2 * pulseFactor;
+        ctx.drawImage(sunPhoto, 
+            centerX - size/2, 
+            centerY - size/2, 
+            size, size);
+        ctx.restore();
+        
+        // Add a subtle overlay to maintain the sun's glow
+        const overlay = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, baseSize * pulseFactor
+        );
+        overlay.addColorStop(0, 'rgba(255, 200, 0, 0.2)');
+        overlay.addColorStop(1, 'rgba(255, 150, 0, 0.4)');
+        ctx.fillStyle = overlay;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, baseSize * pulseFactor, 0, Math.PI * 2);
+        ctx.fill();
+    } else {
+        // Draw default sun core
+        const gradient = ctx.createRadialGradient(
+            centerX, centerY, 0,
+            centerX, centerY, baseSize * pulseFactor
+        );
+        gradient.addColorStop(0, '#fff');
+        gradient.addColorStop(0.3, '#ffff00');
+        gradient.addColorStop(1, '#ffa500');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, baseSize * pulseFactor, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function drawRocket(x, y, angle) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle + Math.PI/2);
+
+            // Rocket body
+            ctx.fillStyle = 'white';
+            ctx.fillRect(-10, -20, 20, 40);
+
+            // Nose cone
+            ctx.beginPath();
+            ctx.moveTo(-10, -20);
+            ctx.lineTo(10, -20);
+            ctx.lineTo(0, -35);
+            ctx.closePath();
+            ctx.fill();
+
+            // Wings
+            ctx.beginPath();
+            ctx.moveTo(-10, 20);
+            ctx.lineTo(-25, 20);
+            ctx.lineTo(-10, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(10, 20);
+            ctx.lineTo(25, 20);
+            ctx.lineTo(10, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            // Engine fire
+            ctx.fillStyle = 'orange';
+            ctx.beginPath();
+            ctx.moveTo(-8, 20);
+            ctx.lineTo(8, 20);
+            ctx.lineTo(0, 35 + Math.random() * 10);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function updateMissionPanel() {
+            const container = document.getElementById('activities-list');
+            container.innerHTML = '';
+
+            activities.forEach((activity, index) => {
+                const div = document.createElement('div');
+                div.className = `activity ${index === currentActivity ? 'current' : ''}`;
+                
+                const status = index < currentActivity ? '✓' : 
+                              index === currentActivity ? '▶' : 
+                              '○';
+                
+                div.innerHTML = `
+                    <div style="color: ${index === currentActivity ? '#0ff' : 
+                                      index < currentActivity ? '#0f0' : 
+                                      '#888'}">
+                        ${status} ${activity.name} (${Math.floor(activity.duration / 60)}:00)
+                    </div>
+                    ${index === currentActivity ? `
+                        <div class="progress-bar">
+                            <div class="progress" style="width: ${(timer / activity.duration) * 100}%"></div>
+                        </div>
+                        <div style="text-align: right; color: #0ff; font-size: 0.9em;">
+                            ${formatTime(activity.duration - timer)}
+                        </div>
+                    ` : ''}
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function animate(currentTime) {
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw stars
+            stars.forEach(star => drawStar(star, currentTime / 1000));
+            
+            // Draw sun with pulsing glow
+            drawSun(currentTime);
+
+            if (!started || activities.length === 0) {
+                requestAnimationFrame(animate);
+                return;
+            }
+
+            // Update current activity
+            if (currentActivity < activities.length) {
+                timer += deltaTime;
+                if (timer >= activities[currentActivity].duration) {
+                    timer = 0;
+                    currentActivity++;
+                }
+                updateMissionPanel();
+            }
+
+            // Update and draw planets
+            activities.forEach((activity, index) => {
+                activity.angle += deltaTime * (0.2 - index * 0.02);
+                const pos = drawPlanet(activity, index);
+                
+                if (index === currentActivity) {
+                    // Update rocket's orbit around current planet
+                    rocketPos.orbitAngle += deltaTime * 2; // Orbital speed
+                    const orbitRadius = 40; // Distance from planet
+                    
+                    // Calculate rocket position based on orbit
+                    rocketPos.x = pos.x + Math.cos(rocketPos.orbitAngle) * orbitRadius;
+                    rocketPos.y = pos.y + Math.sin(rocketPos.orbitAngle) * orbitRadius;
+                    
+                    // Calculate angle for rocket to face direction of movement
+                    const nextX = pos.x + Math.cos(rocketPos.orbitAngle + 0.1) * orbitRadius;
+                    const nextY = pos.y + Math.sin(rocketPos.orbitAngle + 0.1) * orbitRadius;
+                    rocketPos.angle = Math.atan2(nextY - rocketPos.y, nextX - rocketPos.x);
+                }
+            });
+
+            // Draw rocket
+            drawRocket(rocketPos.x, rocketPos.y, rocketPos.angle);
+
+            requestAnimationFrame(animate);
+        }
+
+        // Function to capture and display photo
+        async function capturePhoto() {
+            if (!videoStream) return null;
+            
+            try {
+                // Create temporary video element to capture frame
+                const video = document.createElement('video');
+                video.srcObject = videoStream;
+                await video.play();
+                
+                // Create temporary canvas to capture frame
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = video.videoWidth;
+                tempCanvas.height = video.videoHeight;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Draw video frame to temp canvas
+                tempCtx.drawImage(video, 0, 0);
+                
+                // Convert canvas to image
+                const img = new Image();
+                await new Promise((resolve) => {
+                    img.onload = resolve;
+                    img.src = tempCanvas.toDataURL('image/png');
+                });
+                
+                // Cleanup
+                video.srcObject = null;
+                
+                return img;
+            } catch (error) {
+                console.error('Error capturing photo:', error);
+                alert('Error capturing photo. Please try again.');
+                return null;
+            }
+        }
+
+        // Add event listener for photo capture
+        document.addEventListener('keydown', async function(event) {
+            // Only process key events if timer is running
+            if (!started) return;
+            
+            if (videoStream) {
+                if (event.key.toLowerCase() === 's') {
+                    const img = await capturePhoto();
+                    if (img) {
+                        sunPhoto = img;
+                        showMessage('Photo assigned to sun!');
+                    }
+                } else if (event.key >= '1' && event.key <= '9') {
+                    const planetIndex = parseInt(event.key) - 1;
+                    if (planetIndex < activities.length) {
+                        const img = await capturePhoto();
+                        if (img) {
+                            planetPhotos[planetIndex] = img;
+                            showMessage(`Photo assigned to planet ${event.key}!`);
+                        }
+                    }
+                }
+            }
+        });
+
+        // Function to show temporary message
+        function showMessage(text) {
+            const message = document.createElement('div');
+            message.style.position = 'fixed';
+            message.style.bottom = '20px';
+            message.style.left = '50%';
+            message.style.transform = 'translateX(-50%)';
+            message.style.background = 'rgba(0, 255, 0, 0.8)';
+            message.style.padding = '10px 20px';
+            message.style.borderRadius = '5px';
+            message.style.color = 'white';
+            message.textContent = text;
+            document.body.appendChild(message);
+            setTimeout(() => message.remove(), 3000);
+        }
+    </script>
+</body>
+</html>
