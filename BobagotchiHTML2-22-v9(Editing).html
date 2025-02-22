@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bobagotchi (p5.js Version)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #0f0;
+      font-family: "Courier New", Courier, monospace;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      border: 2px solid #0f0;
+      margin: auto;
+    }
+  </style>
+</head>
+<body>
+<script>
+//browser handling
+// Add this function at the top of your script
+function preventDefaultKeys(e) {
+  // List of keys to prevent default behavior
+  const preventedKeys = [
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 
+    'Tab', 'Enter', 'Backspace', 'Space'
+  ];
+  
+  if (preventedKeys.includes(e.key) || preventedKeys.includes(e.code)) {
+    e.preventDefault();
+  }
+}
+// ----------- VARIABLE DECLARATIONS -----------
+// Global color variables
+let RETRO_BLACK;
+let RETRO_GREEN;
+let RETRO_BLUE;
+let RETRO_RED;
+let RETRO_YELLOW;
+let RETRO_WHITE;
+
+// Game states
+let currentWeather = "Sunny";
+let currentMindState = "Wants to learn";
+let happiness = 100;
+let hunger = 0;
+let userInput = "";
+let message = "";
+let lastWeatherChange;
+let lastMindStateChange;
+
+// Hair variables
+let hairLength = 0;
+let maxHairLength = 200;
+let hairGrowthRate = 0.04;
+let hairChaosThreshold = 90.0;
+
+// Item possession states
+let hasSunglasses = false;
+let hasTie = false;
+let hasBook = false;
+let hasBoombox = false;
+let hasPillow = false;
+let hasUmbrella = false;
+let hasCoat = false;
+let hasWater = false;
+
+// Arrays for possible states
+let weatherConditions = ["Sunny", "Raining", "Snowing", "Nighttime"];
+let mindStates = [
+  "In love", "Wants to relax", "Feels creative", 
+  "Wants to learn", "Feels thirsty", "Has job interview"
+];
+
+// ----------- SETUP AND MAIN LOOP -----------
+function setup() {
+ let canvas = createCanvas(800, 800);
+
+// Create a hidden input to capture keystrokes
+  let hiddenInput = createInput('');
+  hiddenInput.position(-100, -100);  // Move off-screen
+  hiddenInput.attribute('autocomplete', 'off');
+  hiddenInput.attribute('autocorrect', 'off');
+  hiddenInput.attribute('autocapitalize', 'off');
+  hiddenInput.attribute('spellcheck', 'false');
+  
+  // Immediately focus the hidden input
+  hiddenInput.elt.focus();
+  
+  // Add event listener to transfer input to game's userInput
+  hiddenInput.input(() => {
+    userInput = hiddenInput.value();
+    hiddenInput.value('');  // Clear input after capturing
+  });
+
+  // Ensure input stays focused
+  setInterval(() => {
+    if (document.activeElement !== hiddenInput.elt) {
+      hiddenInput.elt.focus();
+    }
+  }, 100);
+
+  // Initialize colors
+  RETRO_BLACK = color(0);
+  RETRO_GREEN = color(0, 255, 0);
+  RETRO_BLUE = color(0, 162, 232);
+  RETRO_RED = color(255, 0, 0);
+  RETRO_YELLOW = color(255, 255, 0);
+  RETRO_WHITE = color(255);
+  
+  
+  // Initialize text settings
+  textFont('Courier New');
+  textAlign(LEFT);
+  // Initialize game state
+  initGame();
+}
+//initialize game function
+
+function initGame() {
+ //reset all state variables
+happiness = 100;
+  hunger = 0;
+  hairLength = 0;
+  userInput = "";
+  message = "Welcome to Bobagotchi! Click below, type an item, press enter.";  // Give user a welcome message
+  
+  // Reset timers
+  lastWeatherChange = millis();
+  lastMindStateChange = millis();
+  
+  // Reset items
+  resetItems();
+  
+  // Set initial states
+  currentWeather = weatherConditions[Math.floor(Math.random() * weatherConditions.length)];
+  currentMindState = mindStates[Math.floor(Math.random() * mindStates.length)];
+  
+  // Make sure game is running
+  loop();
+}
+function draw() {
+  background(RETRO_BLACK);
+  
+  // Draw in layers from back to front
+  drawWeather();
+  drawStatusDisplay();
+  drawBobLogo(50, height/3 - 30, 1.0);
+  drawBob();
+  drawItemList();
+  drawInputBox();
+  drawStatusMessage();
+  drawTimers();
+  
+  // Update game state
+  updateGameStates();
+  updateStats();
+  checkGameOver();
+}
+
+
+// ----------- LOGO DRAWING FUNCTIONS -----------
+function drawBobLogo(x, y, scale) {
+  let letterWidth = 40 * scale;
+  let letterHeight = 80 * scale;
+  let spacing = 20 * scale;
+  let thickness = 10 * scale;
+  
+  // Draw each letter
+  drawLogoB(x, y, letterWidth, letterHeight, thickness);
+  drawLogoO(x + letterWidth + spacing, y, letterWidth, letterHeight, thickness);
+  drawLogoB(x + 2 * (letterWidth + spacing), y, letterWidth, letterHeight, thickness);
+}
+
+function drawLogoB(x, y, w, h, thickness) {
+  let curveHeight = h/2.2;
+  let bottomY = y + h - curveHeight;
+  
+  fill(RETRO_GREEN);
+  noStroke();
+  
+  // Vertical spine
+  rect(x, y, thickness, h);
+  
+  // Top curve segments
+  rect(x, y, w/1.3, thickness);
+  rect(x + w/1.3, y, thickness, curveHeight/2);
+  rect(x + w/1.3 - thickness, y + curveHeight/2, thickness*2, thickness);
+  rect(x, y + curveHeight - thickness, w/1.3, thickness);
+  
+  // Bottom curve segments
+  rect(x, bottomY, w/1.3, thickness);
+  rect(x + w/1.3, bottomY + curveHeight/2, thickness, curveHeight/2);
+  rect(x + w/1.3 - thickness, bottomY + curveHeight/2, thickness*2, thickness);
+  rect(x, y + h - thickness, w/1.3, thickness);
+}
+
+function drawLogoO(x, y, w, h, thickness) {
+  fill(RETRO_GREEN);
+  noStroke();
+  
+  rect(x, y, thickness, h);
+  rect(x + w - thickness, y, thickness, h);
+  rect(x, y, w, thickness);
+  rect(x, y + h - thickness, w, thickness);
+  
+  // Inner pixel details
+  rect(x + thickness*2, y + thickness*2, thickness, thickness);
+  rect(x + w - thickness*3, y + h - thickness*3, thickness, thickness);
+}
+
+// ----------- GAME STATE FUNCTIONS -----------
+function updateGameStates() {
+  if (millis() - lastWeatherChange >= 60000) {  // 60 seconds
+    currentWeather = weatherConditions[Math.floor(Math.random() * weatherConditions.length)];
+    lastWeatherChange = millis();
+    resetItems();
+  }
+  
+  if (millis() - lastMindStateChange >= 45000) {  // 45 seconds
+    currentMindState = mindStates[Math.floor(Math.random() * mindStates.length)];
+    lastMindStateChange = millis();
+    resetItems();
+  }
+}
+
+function updateStats() {
+//add a grace period at start
+if (millis() < 2000) return; //2 second grace period at start
+
+  let inWeatherGrace = (millis() - lastWeatherChange) < 20000;
+  let inMindStateGrace = (millis() - lastMindStateChange) < 10000;
+  
+  if (!inWeatherGrace || !inMindStateGrace) {
+    if (!hasRequiredItems()) {
+      happiness = max(0, happiness - (40.0/60.0)/frameRate());  // Use p5.js max instead of Math.max
+    }
+  }
+  
+  hunger = min(100, hunger + (45.0/60.0)/frameRate());  // Use p5.js min instead of Math.max
+  hairLength = min(maxHairLength, hairLength + hairGrowthRate);
+}
+
+function hasRequiredItems() {
+  let hasWeatherItem = false;
+  let hasMindItem = false;
+  
+  switch(currentWeather) {
+    case "Sunny": hasWeatherItem = hasSunglasses; break;
+    case "Raining": hasWeatherItem = hasUmbrella; break;
+    case "Snowing": hasWeatherItem = hasCoat; break;
+    case "Nighttime": hasWeatherItem = hasPillow; break;
+  }
+  
+  switch(currentMindState) {
+    case "In love": hasMindItem = message.includes("Bobette"); break;
+    case "Wants to relax": hasMindItem = message.includes("boombox"); break;
+    case "Feels creative": hasMindItem = message.includes("piano"); break;
+    case "Wants to learn": hasMindItem = hasBook; break;
+    case "Feels thirsty": hasMindItem = hasWater; break;
+    case "Has job interview": hasMindItem = hasTie; break;
+    case "Nighttime": hasMindItem = hasPillow; break;
+  }
+  
+  return hasWeatherItem && hasMindItem;
+}
+
+// ----------- INPUT HANDLING -----------
+function keyPressed() {
+  if (keyCode === ENTER) {
+    processInput();
+  } else if (keyCode === BACKSPACE) {
+    if (userInput.length > 0) {
+      userInput = userInput.substring(0, userInput.length - 1);
+    }
+  } else if (key.length === 1) {  // Only add printable characters
+    userInput += key;
+  }
+  return false;  // Prevent default behavior
+}
+
+function keyIsSpecial(k) {
+  return k === CODED || k === ENTER || k === RETURN || k === BACKSPACE || k === TAB;
+}
+
+function processInput() {
+  let input = userInput.toLowerCase().trim();
+  
+  if (input === "tacos") {
+    hunger = Math.max(0, hunger - 30);
+    message = "You gave Bob tacos! Hunger decreased.";
+  } else if (input === "haircut") {
+    hairLength = 0;
+    message = "Bob got a haircut!";
+  } else if (input === getWeatherNeed().toLowerCase()) {
+    updateWeatherItem(input);
+    happiness = 100;
+    message = "You gave Bob his " + input + "!";
+  } else if (input === getMindNeed().toLowerCase()) {
+    updateMindItem(input);
+    happiness = 100;
+    message = "You gave Bob his " + input + "!";
+  } else {
+    message = "Bob doesn't need that right now.";
+  }
+  
+  userInput = "";
+}
+
+function getWeatherNeed() {
+  switch(currentWeather) {
+    case "Snowing": return "coat";
+    case "Nighttime": return "pillow";
+    case "Raining": return "umbrella";
+    case "Sunny": return "sunglasses";
+    default: return "unknown";
+  }
+}
+
+function getMindNeed() {
+  switch(currentMindState) {
+    case "In love": return "Bobette";
+    case "Wants to relax": return "boombox";
+    case "Feels creative": return "piano";
+    case "Wants to learn": return "book";
+    case "Feels thirsty": return "water";
+    case "Has job interview": return "tie";
+    case "Nighttime": return "pillow";
+    default: return "unknown";
+  }
+}
+
+// ----------- ITEM MANAGEMENT -----------
+function updateWeatherItem(item) {
+  switch(item) {
+    case "sunglasses": hasSunglasses = true; break;
+    case "umbrella": hasUmbrella = true; break;
+    case "coat": hasCoat = true; break;
+    case "pillow": hasPillow = true; break;
+  }
+}
+
+function updateMindItem(item) {
+  switch(item) {
+    case "book": hasBook = true; break;
+    case "tie": hasTie = true; break;
+    case "water": hasWater = true; break;
+    case "boombox": hasBoombox = true; break;
+    case "pillow": hasPillow = true; break;
+  }
+}
+
+function resetItems() {
+  hasSunglasses = false;
+  hasTie = false;
+  hasBook = false;
+  hasPillow = false;
+  hasBoombox = false;
+  hasUmbrella = false;
+  hasCoat = false;
+  hasWater = false;
+}
+
+// ----------- DRAWING FUNCTIONS -----------
+function drawBob() {
+  let bobX = width/2;
+  let bobY = height/2 - 30;
+  
+  // Draw hair first (it goes behind Bob)
+  drawHair(bobX, bobY-20);
+  
+  // Basic Bob shape
+  stroke(RETRO_GREEN);
+  strokeWeight(2);
+  fill(RETRO_BLACK);
+
+  // Head
+  rect(bobX-75, bobY-75, 150, 150);
+  rect(bobX-90, bobY-60, 180, 120);
+  rect(bobX-60, bobY-90, 120, 180);
+  
+  // Items that go behind features
+  if (hasBoombox) {
+    drawBoombox(bobX, bobY);
+  }
+  
+  // Eyes based on state
+  if (currentMindState === "In love") {
+    drawHeartEyes(bobX, bobY);
+  } else if (hasSunglasses) {
+    drawSunglasses(bobX, bobY);
+  } else {
+    drawNormalEyes(bobX, bobY);
+  }
+  
+  // Mouth
+  drawRetroSmile(bobX, bobY, happiness);
+  
+  // Items that go in front
+  if (hasTie) drawTie(bobX, bobY);
+  if (hasUmbrella) drawUmbrella(bobX+40, bobY);
+  if (hasCoat) drawCoat(bobX, bobY);
+  if (hasBook) drawBook(bobX, bobY);
+  if (hasWater) drawWaterGlass(bobX, bobY);
+ if (hasPillow) drawPillow(bobX, bobY);
+}
+
+// ----------- HAIR SYSTEM -----------
+function drawHair(bobX, bobY) {
+  stroke(RETRO_GREEN);
+  noFill();
+  
+  let numStrands = 12;
+  
+  // Calculate chaos factor based on hair length
+  let chaosFactor = 1.0;
+  if (hairLength > hairChaosThreshold) {
+    chaosFactor = map(hairLength, hairChaosThreshold, maxHairLength, 1.0, 2.0);
+  }
+  
+  // Draw main hair strands
+  for (let i = 0; i < numStrands; i++) {
+    let startX = bobX + map(i, 0, numStrands-1, -60, 60);
+    let startY = bobY - 70;
+    
+    beginShape();
+    vertex(startX, startY);
+    
+    // Create hair curve
+    for (let y = 0; y < hairLength; y += 5) {
+      let wave = sin((y * 0.05) + (frameCount * 0.02) + (i * 0.3)) * 2 * chaosFactor;
+      
+      if (hairLength > hairChaosThreshold) {
+        wave += cos((y * 0.1) + (frameCount * 0.01)) * (chaosFactor - 1);
+      }
+      
+      let x = startX + wave;
+      vertex(x, startY - y);
+    }
+    endShape();
+  }
+  
+  // Add flyaway hairs for messy hair
+  if (hairLength > hairChaosThreshold * 1.5) {
+    let numFlyaways = int((hairLength - hairChaosThreshold * 1.5) / 20);
+    for (let i = 0; i < numFlyaways; i++) {
+      let startX = bobX + random(-50, 50);
+      let startY = bobY - 60 + random(-5, 0);
+      let endX = startX + random(-5, 5);
+      let endY = startY - random(5, 10);
+      line(startX, startY, endX, endY);
+    }
+  }
+}
+
+// ----------- FACIAL FEATURES -----------
+function drawHeartEyes(bobX, bobY) {
+  drawHeartEye(bobX - 15, bobY - 8);
+  drawHeartEye(bobX + 5, bobY - 8);
+}
+
+function drawHeartEye(x, y) {
+  let heartSize = 4 + sin(frameCount * 0.1) * 0.8;
+  
+  fill(RETRO_RED);
+  noStroke();
+  
+  // Top circles of heart
+  rect(x, y, heartSize*1.5, heartSize*1.5);
+  rect(x + heartSize*1.5, y, heartSize*1.5, heartSize*1.5);
+  
+  // Bottom point
+  rect(x + heartSize*0.75, y + heartSize*1.5, heartSize*1.5, heartSize*1.5);
+  
+  // Detail pixels
+  fill(RETRO_BLACK);
+  rect(x + heartSize, y + heartSize*0.5, 2, 2);
+  rect(x + heartSize*2, y + heartSize*0.5, 2, 2);
+}
+
+function drawNormalEyes(bobX, bobY) {
+  fill(RETRO_GREEN);
+  rect(bobX-15, bobY-8, 8, 8);
+  rect(bobX+7, bobY-8, 8, 8);
+}
+
+function drawRetroSmile(bobX, bobY, happiness) {
+  let baseY = bobY + 10;
+  let smileHeight = map(happiness, 0, 100, -8, 8);
+  
+  fill(RETRO_GREEN);
+  noStroke();
+  
+  // Central pixels
+  rect(bobX - 2, baseY + smileHeight, 4, 4);
+  
+  // Side pixels
+  rect(bobX - 8, baseY + (smileHeight * 0.8), 4, 4);
+  rect(bobX + 4, baseY + (smileHeight * 0.8), 4, 4);
+  rect(bobX - 14, baseY + (smileHeight * 0.4), 4, 4);
+  rect(bobX + 10, baseY + (smileHeight * 0.4), 4, 4);
+  
+  // Expression details
+  if (happiness > 75) {
+    rect(bobX - 18, baseY - 2, 2, 2);
+    rect(bobX + 16, baseY - 2, 2, 2);
+  }
+}
+// ----------- ITEM DRAWING FUNCTIONS -----------
+function drawSunglasses(bobX, bobY) {
+  fill(RETRO_YELLOW);
+  // Frame
+  rect(bobX-24, bobY-12, 48, 3);
+  rect(bobX-22, bobY-14, 44, 2);
+  
+  // Lenses
+  fill(RETRO_BLACK);
+  rect(bobX-22, bobY-9, 18, 12);
+  rect(bobX+4, bobY-9, 18, 12);
+  
+  // Details
+  fill(RETRO_YELLOW);
+  rect(bobX-3, bobY-12, 6, 15);
+  rect(bobX-24, bobY-9, 2, 14);
+  rect(bobX+22, bobY-9, 2, 14);
+}
+
+function drawBoombox(bobX, bobY) {
+  let boomboxX = bobX + 55;
+  
+  // Main body
+  stroke(RETRO_GREEN);
+  fill(RETRO_BLACK);
+  rect(boomboxX, bobY-5, 80, 60);
+  
+  // Components
+  drawBoomboxSpeaker(boomboxX + 5, bobY + 5);
+  drawBoomboxSpeaker(boomboxX + 50, bobY + 5);
+  drawBoomboxControls(boomboxX + 32, bobY + 5);
+  drawBoomboxHandleAndAntenna(boomboxX, bobY);
+}
+
+function drawBoomboxSpeaker(x, y) {
+  fill(RETRO_BLACK);
+  rect(x, y, 25, 25);
+  fill(RETRO_GREEN);
+  rect(x + 5, y + 5, 15, 15);
+  rect(x + 10, y + 10, 5, 5);
+}
+
+function drawBoomboxControls(x, y) {
+  fill(RETRO_BLACK);
+  rect(x, y, 16, 25);
+  
+  fill(RETRO_GREEN);
+  // Knobs and buttons
+  rect(x + 3, y + 3, 4, 4);
+  rect(x + 9, y + 3, 4, 4);
+  rect(x + 3, y + 10, 4, 4);
+  rect(x + 9, y + 10, 4, 4);
+  rect(x + 3, y + 17, 10, 5);
+}
+
+function drawBoomboxHandleAndAntenna(x, y) {
+  fill(RETRO_BLACK);
+  rect(x + 20, y - 12, 40, 5);
+  line(x + 5, y - 5, x - 5, y - 15);
+  line(x + 75, y - 5, x + 85, y - 15);
+}
+
+function drawBook(bobX, bobY) {
+  let bookX = bobX + 55;
+  
+  // Main book
+  stroke(RETRO_GREEN);
+  fill(RETRO_WHITE);
+  rect(bookX, bobY-5, 60, 75);
+  rect(bookX, bobY-5, 10, 75);
+  
+  // Japanese-style text
+  fill(RETRO_BLACK);
+  rect(bookX+50, bobY+5, 6, 12);
+  rect(bookX+50, bobY+25, 6, 12);
+  rect(bookX+50, bobY+45, 6, 12);
+  
+  // Cover art and details
+  rect(bookX+14, bobY+5, 24, 24);
+  stroke(RETRO_GREEN);
+  line(bookX+60, bobY-5, bookX+60, bobY+70);
+  line(bookX+58, bobY-5, bookX+58, bobY+70);
+}
+
+function drawWaterGlass(bobX, bobY) {
+  let glassX = bobX - 35;
+  
+  // Glass
+  stroke(RETRO_BLUE);
+  fill(RETRO_BLACK);
+  rect(glassX-8, bobY+15, 16, 20);
+  rect(glassX-6, bobY+35, 12, 2);
+  
+  // Animated water
+  fill(RETRO_BLUE);
+  noStroke();
+  for(let i = 0; i < 3; i++) {
+    let waveOffset = sin(frameCount * 0.1 + i) * 2;
+    rect(glassX-6, bobY+20+i*4, 12, 3);
+  }
+  
+  // Straw
+  stroke(RETRO_RED);
+  fill(RETRO_RED);
+  rect(glassX+2, bobY+17, 2, 10);
+  rect(glassX+2, bobY+17, 8, 2);
+  rect(glassX+10, bobY+17, 25, 2);
+}
+
+function drawTie(bobX, bobY) {
+  fill(RETRO_RED);
+  noStroke();
+  rect(bobX-5, bobY+20, 10, 20);
+  triangle(bobX-10, bobY+40, bobX, bobY+50, bobX+10, bobY+40);
+}
+
+function drawUmbrella(bobX, bobY) {
+  // Umbrella pole
+  stroke(RETRO_BLUE);
+  strokeWeight(2);
+  line(bobX, bobY-30, bobX, bobY);
+  
+  // Umbrella canopy with more pixel-art details
+  fill(RETRO_BLUE);
+  noStroke();
+  
+  // Main canopy shape
+  triangle(bobX-20, bobY-30, bobX, bobY-50, bobX+20, bobY-30);
+  
+  // Canopy detail lines
+  stroke(RETRO_GREEN);
+  strokeWeight(1);
+  
+  // Radial lines
+  line(bobX, bobY-50, bobX-20, bobY-30);
+  line(bobX, bobY-50, bobX+20, bobY-30);
+  line(bobX, bobY-50, bobX-10, bobY-40);
+  line(bobX, bobY-50, bobX+10, bobY-40);
+  
+  // Bottom edge details
+  line(bobX-20, bobY-30, bobX-15, bobY-25);
+  line(bobX+20, bobY-30, bobX+15, bobY-25);
+}
+function drawPillow(bobX, bobY) {
+  // Pillow main body
+  fill(RETRO_WHITE);
+  stroke(RETRO_BLUE);
+  strokeWeight(1);
+  
+  // Main pillow rectangle
+  rect(bobX - 25, bobY + 20, 50, 30);
+  
+  // Pillow details
+  fill(RETRO_BLUE);
+  
+  // Pillow pattern - small squares/details
+  rect(bobX - 20, bobY + 25, 5, 5);
+  rect(bobX + 15, bobY + 40, 5, 5);
+  
+  // Subtle shading lines
+  stroke(RETRO_GREEN);
+  line(bobX - 25, bobY + 25, bobX + 25, bobY + 25);
+  line(bobX - 25, bobY + 45, bobX + 25, bobY + 45);
+}
+
+function drawCoat(bobX, bobY) {
+  fill(RETRO_BLUE);
+  stroke(RETRO_GREEN);
+  strokeWeight(1);
+  
+  // Main body and collar
+  rect(bobX-40, bobY+10, 80, 50);
+  triangle(bobX-40, bobY+10, bobX-20, bobY+10, bobX-30, bobY);
+  triangle(bobX+40, bobY+10, bobX+20, bobY+10, bobX+30, bobY);
+  
+  // Sleeves - longer and wider
+  rect(bobX-50, bobY+10, 20, 40);
+  rect(bobX+30, bobY+10, 20, 40);
+  
+  // Bottom of coat - slightly flared
+  rect(bobX-40, bobY+60, 80, 10);
+  
+  // Buttons and details
+  fill(RETRO_GREEN);
+  // Center row of buttons
+  rect(bobX-5, bobY+20, 6, 6);
+  rect(bobX-5, bobY+30, 6, 6);
+  rect(bobX-5, bobY+40, 6, 6);
+  
+  // Sleeve cuffs
+  rect(bobX-50, bobY+50, 20, 4);
+  rect(bobX+30, bobY+50, 20, 4);
+  
+  // Pocket details
+  rect(bobX-35, bobY+35, 10, 6);
+  rect(bobX+25, bobY+35, 10, 6);
+}
+// ----------- WEATHER EFFECTS -----------
+function drawWeather() {
+  switch(currentWeather) {
+    case "Raining": drawRain(); break;
+    case "Sunny": drawSun(); break;
+    case "Snowing": drawSnow(); break;
+    case "Nighttime": drawNight(); break;
+  }
+
+}
+function drawRain() {
+  stroke(RETRO_BLUE);
+  for(let i = 0; i < width; i+=10) {
+    // Create multiple layers of rain drops
+    for(let layer = 0; layer < 3; layer++) {
+      // Use different speeds and offsets for each layer to create depth
+      let yOffset = (frameCount * (2 + layer)) % height;
+      let dropLength = 15 + layer * 5;  // Varying drop lengths
+      let dropAngle = 0.5;  // Slight angle to simulate wind
+      
+      // Randomize drop position slightly for more natural look
+      let xVariation = sin(frameCount * 0.1 + layer) * 10;
+      
+      line(
+        i + xVariation, 
+        yOffset - layer * 50, 
+        i + xVariation + dropAngle * dropLength, 
+        yOffset - layer * 50 + dropLength
+      );
+    }
+  }
+}
+
+function drawSun() {
+  stroke(RETRO_YELLOW);
+  let sunSize = 40 + sin(frameCount * 0.1) * 5;
+  for(let i = 0; i < 8; i++) {
+    let angle = i * TWO_PI/8 + frameCount * 0.05;
+    line(width - 100, 100, 
+         width - 100 + cos(angle) * sunSize,
+         100 + sin(angle) * sunSize);
+  }
+}
+
+function drawSnow() {
+  fill(RETRO_BLUE);
+  noStroke();
+  for(let i = 0; i < 50; i++) {
+    let x = (i * 37 + frameCount) % width;
+    let y = ((i * 23 + frameCount) % height);
+    rect(x, y, 3, 3);
+  }
+}
+
+function drawNight() {
+  background(color(0, 0, 50));
+  fill(RETRO_YELLOW);
+  for(let i = 0; i < 50; i++) {
+    let x = width * noise(i * 0.1);
+    let y = height * noise(i * 0.1 + 5);
+    let bright = 255 * noise(frameCount * 0.01 + i);
+    fill(bright);
+    rect(x, y, 2, 2);
+  }
+}
+
+// ----------- UI ELEMENTS -----------
+function drawStatusDisplay() {
+  drawRetroFrame(10, 10, 780, 180);
+  
+  fill(RETRO_GREEN);
+  textSize(24);
+  text("WEATHER: " + currentWeather, 30, 45);
+  text("STATE: " + currentMindState, 30, 80);
+  
+  // Hair status
+  textSize(16);
+  let hairStatus = "NORMAL";
+  if (hairLength >= hairChaosThreshold) {
+    hairStatus = "UNRULY!";
+    if (frameCount % 30 < 15) {
+      fill(RETRO_RED);
+    }
+  }
+  text("HAIR LENGTH: " + nf(hairLength, 0, 1) + " (" + hairStatus + ")", 30, 115);
+  
+  drawProgressBars();
+}
+
+function drawProgressBars() {
+  drawRetroProgressBar(670, 30, happiness, RETRO_GREEN);
+  drawRetroProgressBar(670, 60, hunger, RETRO_RED);
+  
+  fill(RETRO_GREEN);
+  textSize(16);
+  text("HAPPINESS: " + nf(happiness, 0, 1) + "%", 500, 45);
+  text("HUNGER: " + nf(hunger, 0, 1) + "%", 500, 75);
+}
+
+function drawRetroProgressBar(x, y, value, barColor) {
+  // Background
+  fill(RETRO_BLACK);
+  stroke(barColor);
+  rect(x, y, 100, 15);
+  
+  // Progress
+  fill(barColor);
+  noStroke();
+  rect(x+2, y+2, map(value, 0, 100, 0, 96), 11);
+  
+  // Segmented look
+  for(let i = 0; i < value; i+=10) {
+    fill(RETRO_BLACK);
+    rect(x + map(i, 0, 100, 0, 96), y+2, 2, 11);
+  }
+}
+
+function drawItemList() {
+  drawRetroFrame(10, height-300-30, 580, 150);
+  fill(RETRO_GREEN);
+  textSize(24);
+  text("BOB'S THINGS:", 30, height-270-30);
+  
+  let items = [
+    "tacos", "coat", "pillow", "umbrella", "tie",
+    "boombox", "sunglasses", "piano", "book",
+    "Bobette", "water", "haircut"
+  ];
+  
+  textSize(20);
+  let col = 0;
+  let row = 0;
+  for(let item of items) {
+    text(item, 40 + col * 190, height-250-30 + row * 25);
+    row++;
+    if(row > 4) {
+      row = 0;
+      col++;
+    }
+  }
+}
+
+function drawInputBox() {
+  // Clear area
+  fill(RETRO_BLACK);
+  noStroke();
+  rect(10, height-100, 580, 25);
+  drawRetroFrame(10, height-100, 580, 25);
+
+  
+  // Text
+  fill(RETRO_GREEN);
+  textSize(16);
+  let displayText = "> " + userInput;
+  text(displayText, 20, height-82);  
+  
+  // Blinking cursor
+  if(frameCount % 30 < 15) {
+    fill(RETRO_GREEN);
+    rect(textWidth(displayText) + 25, height-85, 8, 2);  
+  }
+}
+
+function drawStatusMessage() {
+  drawRetroFrame(10, height-140, 620, 30);
+  fill(RETRO_YELLOW);
+  textSize(16);
+  text(message, 20, height-120);
+}
+
+function drawTimers() {
+  let weatherTimeLeft = 60 - (millis() - lastWeatherChange) / 1000.0;
+  let mindTimeLeft = 45 - (millis() - lastMindStateChange) / 1000.0;
+  
+  fill(RETRO_YELLOW);
+  textSize(14);
+  text("WEATHER CHANGE IN: " + nf(weatherTimeLeft, 0, 1) + "s", 20, 160);
+  text("MIND CHANGE IN: " + nf(mindTimeLeft, 0, 1) + "s", 20, 140);
+}
+// ----------- SPECIAL EFFECTS -----------
+function drawCRTEffect() {
+  // Scan lines
+  stroke(RETRO_GREEN, 20);
+  for(let y = 0; y < height; y += 2) {
+    line(0, y, width, y);
+  }
+  
+  // Screen edge vignette
+  loadPixels();
+  for(let y = 0; y < height; y++) {
+    for(let x = 0; x < width; x++) {
+      let distanceFromEdge = min(min(x, width-x), min(y, height-y));
+      if(distanceFromEdge < 20) {
+        let idx = (y * width + x) * 4;
+        pixels[idx + 3] = map(distanceFromEdge, 0, 20, 255, 0);
+      }
+    }
+  }
+  updatePixels();
+}
+
+function drawRetroFrame(x, y, w, h) {
+  stroke(RETRO_GREEN);
+  strokeWeight(2);
+  noFill();
+  rect(x, y, w, h);
+  
+  // Corner details
+  line(x+5, y+5, x+15, y+5);
+  line(x+5, y+5, x+5, y+15);
+  line(x+w-15, y+5, x+w-5, y+5);
+  line(x+w-5, y+5, x+w-5, y+15);
+  line(x+5, y+h-5, x+5, y+h-15);
+  line(x+5, y+h-5, x+15, y+h-5);
+  line(x+w-15, y+h-5, x+w-5, y+h-5);
+  line(x+w-5, y+h-15, x+w-5, y+h-5);
+}
+
+// ----------- GAME OVER AND RESET -----------
+function checkGameOver() {
+  if (happiness <= 0 || hunger >= 100) {
+    drawGameOver();
+    noLoop();
+  }
+}
+
+function drawGameOver() {
+  background(RETRO_BLACK);
+  
+  // Glitch effect
+  for(let i = 0; i < height; i += 4) {
+    if(random(1) < 0.1) {
+      stroke(RETRO_GREEN);
+      line(0, i, width, i);
+    }
+  }
+  
+  textAlign(CENTER);
+  fill(RETRO_RED);
+  textSize(48);
+  text("GAME OVER", width/2, height/2-20);
+  
+  if(frameCount % 30 < 15) {
+    textSize(24);
+    fill(RETRO_GREEN);
+    text("Press R to restart", width/2, height/2+40);
+  }
+  
+  textSize(16);
+  fill(RETRO_YELLOW);
+  text("Final Happiness: " + nf(happiness, 0, 1), width/2, height/2+80);
+  text("Final Hunger: " + nf(hunger, 0, 1), width/2, height/2+100);
+}
+
+function keyReleased() {
+  if ((happiness <= 0 || hunger >= 100) && key === 'r') {
+    resetGame();
+  }
+}
+
+function resetGame() {
+  happiness = 100;
+  hunger = 0;
+  hairLength = 0;
+  userInput = "";
+  message = "";
+  lastWeatherChange = millis();
+  lastMindStateChange = millis();
+  resetItems();
+  loop();
+  textAlign(LEFT);
+}
+</script>
+</body>
+</html>
